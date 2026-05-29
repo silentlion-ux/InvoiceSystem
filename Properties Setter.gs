@@ -11,7 +11,7 @@
 // ***********************
 // Global pseudo-macros
 // ***********************
-/** Names of the sheets are in red */
+/** Names of the sheets are in light blue */
 const SPECTACULAR_BOOKINGS_SHEET = 'Spectacular Artist';
 const SPECTACULAR_INVOICE_SHEET = 'SA Invoices';
 const GREAT_BOOKINGS_SHEET = 'Great Musician';
@@ -61,7 +61,7 @@ console.log("Collecting settings...");
                     const colsLogStart = settings.getRange('A110');
                     const finalColNumHolder = colsLogStart;
 
-/** The values in red are cell references, keep these updated */
+/** The values in light blue are cell references, keep these updated */
 const emailTemplateSubject = settings.getRange('C37');
 const emailTemplateBody1 = settings.getRange('C38');
 const emailTemplateBody2 = settings.getRange('C39');
@@ -72,7 +72,7 @@ const addressSpitter = addresses.getRange('F3');
 // ***********************
 // Settings
 // ***********************
-/** Keep the values in red updated */
+/** Keep the cell references in light blue updated, eg the 'O13' in getRange('013') */
 const headFolderId = settings.getRange('O13').getValue().slice(-33);
 const sortFiles = settings.getRange('O14').getValue();
 const debugFolderId = settings.getRange('O33').getValue().slice(-33);
