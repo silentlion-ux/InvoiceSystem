@@ -3,15 +3,16 @@
 /** 
  *****FILE MAP*****
 
+This section describes the functions that come below.
  <--- See also the Properties Setter.gs file
 
-* getInvoiceRefs() { fills in invoice refs for given bookings sheet object }
+* getInvoiceRefs() { fills in invoice refs for a given bookings sheet }
 
 * folderFinder() { finds the correct folder to file the invoice into }
 
-* createPDF() { creates an invoice PDF and names it with setPDFName() }
+* createPDF() { creates an invoice PDF and names it using the setPDFName() function }
 
-* setPDFName() { creates the string (name) to use as the exported PDF name }
+* setPDFName() { creates the name to use as the exported PDF name }
 
 * runExporter() { 
   grabs the user's input settings;
@@ -20,9 +21,9 @@
 }
 
 These functions run when you press the "export" button on the invoice tabs:
-* externalsExportButton() { calls runExporter() for the invoice on the Externals Invoices tab }
-* spenceExportButton() { ditto for Spencer }
-* georgeExportButton() { ditto for George }
+* externalsExportButton() { calls runExporter() for the current invoice in the Externals Invoices tab }
+* spectacularExportButton() { ditto for Spectacular Artist }
+* greatExportButton() { ditto for Great Musician }
 * otherExportButton() { ditto for Other }
 
 * emailer() { drafts an email with an invoice PDF attached }
@@ -36,7 +37,7 @@ These functions run when you press the "export" button on the invoice tabs:
 This function runs when you press the "RUN" button on the Settings tab:
 * factory() { runs all of the above functions, depending on user settings in the Settings tab }
 
-* onEdit() { if the user changes the invoice on any of the invoices tabs, it removes the download link }
+* onEdit() { if the user changes the "Switch 1" number on any of the invoices tabs, it removes the download link }
 
 * sillyDebug() { for testing code snippets }
 
@@ -44,38 +45,26 @@ This function runs when you press the "RUN" button on the Settings tab:
 */
 
 // fills in invoice refs for due invoice rows
-// the obj parameter contains information about the artist and their sheet, created from Properties Setter.gs
+// the obj parameter contains information about the artist and their sheet. It's created in Properties Setter.gs
 function getInvoiceRefs(obj, year=thisYear) {
-  //gets the last row to check for filling in invoice refs
+
   console.log("setting invoice refs for "+obj.thisSheetName+", "+year);
   spreadsheet.toast("Filling invoice refs for "+obj.thisSheetName," "+year);
-  dueCol = obj[year].dueStatus;
-  console.log("dueStat: "+obj[year].dueStatus);
-  inputCell.setValue(`=left(address(1,`+dueCol+`,2),2)`);
-  tertiaryCell.setValue(`=substitute(`+inputCell.getA1Notation()+`,"$",)`);
-  outputCell.setValue(`=let(letter,`+tertiaryCell.getA1Notation()+`,max(arrayformula(filter(row(indirect("'`+obj.thisSheetName+`'!"&letter&":"&letter)),indirect("'`+obj.thisSheetName+`'!"&letter&":"&letter)="DUE: Invoice"))))`);
-  let last = outputCell.getValue();
-  //cleaning
-  inputCell.clear(); outputCell.clear(); tertiaryCell.clear();
 
-  if (last!="#N/A"&&last!="#VALUE!"){
-  // fetching invoice values
-    invRefs = obj.thisSheet.getRange(1,obj[year].invRef,last,1).getValues();
-    confs = obj.thisSheet.getRange(1,obj[year].bookedWithVenue,last,1).getValues();
-    dues = obj.thisSheet.getRange(1,dueCol,last,1).getValues();
-
-    // fills in the invoice refs using the template ref formula
-    for (let i=0; i<last; i++) {
-     if (invRefs[i][0]==""&&dues[i][0]=="DUE: Invoice"&&confs[i][0]=="Confirmed") {
-      console.log("filling ref at row "+[i+1]);
-      obj.thisSheet.getRange(obj.headingsRow,obj[year].invGenCol).copyTo(
-      obj.thisSheet.getRange(i+1,obj[year].invRef),
-      SpreadsheetApp.CopyPasteType.PASTE_VALUES,
-     false,);
-     // waiting for the ref template cell to generate new reference number
-     while (obj.thisSheet.getRange(6,obj[year].invGenCol).getValue()==obj.thisSheet.getRange(i+1,obj[year].invRef).getValue()){}
-      };
-    };
+  const dueRows = getFullRange(obj, year)[year];
+  if (dueRows[0]>0){
+    const confs = obj.thisSheet.getRange(1,obj[year].bookedWithVenue,dueRows.at(-1),1).getValues();
+    for (let i=0; i<dueRows.length; i++){
+      if (confs[dueRows[i]-1][0]=="Confirmed"){
+        console.log("filling ref at row "+dueRows[i]);
+        obj.thisSheet.getRange(obj.headingsRow,obj[year].invGenCol).copyTo(
+        obj.thisSheet.getRange(dueRows[i],obj[year].invRef),
+        SpreadsheetApp.CopyPasteType.PASTE_VALUES,
+       false,);
+       // waiting for the ref template cell to generate new reference number
+       while (obj.thisSheet.getRange(6,obj[year].invGenCol).getValue()==obj.thisSheet.getRange(dueRows[i],obj[year].invRef).getValue()){}
+      }
+    }
   }
 }
 
@@ -106,11 +95,12 @@ function folderFinder (idOfHeadFolder, artist="who", year=thisYear) {
 
 /**
  * exports a PDF to a chosen GDrive Folder, returning the PDF from GDrive
- * @param {string} ssId - Id of the Google Spreadsheet
- * @param {object} sheet - Sheet to be converted as PDF
- * @param {string} pdfName - File name of the PDF being created
- * @param {string} targFolder - ID of the GDrive folder to export to
- * @return {file object} PDF file as a blob
+ * parameters (the bits in the (parentheses)):
+ * ssId - Id of the Google Spreadsheet
+ * sheet - Sheet to be converted as PDF
+ * pdfName - File name of the PDF being created
+ * targFolder - ID of the GDrive folder to export to
+ * returns the PDF file as a blob
  */
 function createPDF(ssId, sheet, pdfName, targFolder) {
   const fr = 4, fc = 2, lc = 11, lr = 46;
@@ -147,7 +137,7 @@ function setPDFName (obj, artist) {
   // if an external artist, get the artist name from the bookings sheet
   if (artist=="ext") { artist = obj.thisSheet.getRange(inv,obj[inYear].artist).getValue(); }
 
-  // figure out the date
+  // figure out the date. JS Date and datelocale objects have proven less robust than using Sheets formulae in this context
   inputCell.setValue(`=4+MATCH(` + inYear + `,'` + obj.thisSheetName + `'!1:1,0)`);
   d = obj.thisSheet.getRange(inv,obj[inYear].date).getValue();
   if (typeof(d)=="string"){
@@ -158,7 +148,7 @@ function setPDFName (obj, artist) {
   }
 
   // compensating for daylight savings
-  inputCell.setValue(`=indirect("'` + obj.thisSheet.getSheetName() + `'!R"&'` + obj.invSheet.getSheetName() + `'`+ROW_CELL_ADDRESS+`&"C`+obj[inYear].date+`",0)`);
+  inputCell.setValue(`=indirect("'` + obj.thisSheet.getSheetName() + `'!R"&'` + obj.invSheet.getSheetName() + `'!`+ROW_CELL_ADDRESS+`&"C`+obj[inYear].date+`",0)`);
   outputCell.setValue(`=AND(datevalue(`+inputCell.getA1Notation()+`)>datevalue("29/3/`+inYear+`"),datevalue(`+inputCell.getA1Notation()+`)<datevalue("27/10/`+inYear+`"))`);
   if (outputCell.getValue()==1) {d.setMinutes(d.getMinutes() + 60);}
   let date = d.getUTCDate() + "-" + (d.getUTCMonth()+1) + "-" + d.getUTCFullYear();
@@ -216,10 +206,6 @@ function runExporter(obj, artist, download = false) {
     let downloader = pdfFile.getDownloadUrl();
     obj.invSheet.getRange('N2').setValue('=hyperlink("'+ downloader +'","DOWNLOAD")');
   }
-
-  // cleanup
-  inputCell.clear();
-  outputCell.clear();
   return pdfFile;
 }
 
@@ -229,12 +215,12 @@ function externalsExportButton(download = true) {
   return runExporter(sheetCols.extObj, "ext", download);
 }
 
-function spenceExportButton(download = true) {
-  return runExporter(sheetCols.spenceObj, "Spencer Flay", download);
+function spectacularExportButton(download = true) {
+  return runExporter(sheetCols.spectacularObj, "Spectacular Artist", download);
 }
 
-function georgeExportButton(download = true) {
-  return runExporter(sheetCols.georgeObj, "George Croucher", download);
+function greatExportButton(download = true) {
+  return runExporter(sheetCols.greatObj, "Great Musician", download);
 }
 
 function otherExportButton(download = true) {
@@ -246,6 +232,10 @@ function emailer(address="hello@example.com",info=[], attachment) {
   // applying override email address if indicated in user settings
   if (settings.getRange('O23').getValue()){address = settings.getRange('O22').getValue();}
   
+  // getting the "from" email address, or using user's if n/a
+  let fromEmailAddress = String(fromEmail);
+  if (fromEmailAddress = "" || !fromEmailAddress.includes("@")){ fromEmailAddress = Session.getActiveUser().getEmail();}
+
   infoString = "";
   for (let i=0; i<info.length; i++){
     for (let j=0; j<info[i].length-1; j++){
@@ -261,26 +251,28 @@ function emailer(address="hello@example.com",info=[], attachment) {
     {
       attachments: attachment.map(blb => blb.getAs(MimeType.PDF)),
       name: 'Alex Dale-Staples',
-      from: fromEmail,
+      from: fromEmailAddress,
     },
   );
 }
 
 // exports all selected invoices on a given sheet
 // the "obj" parameter contains info about the artist and their sheet, created in Properties Setter.gs
-// the "exporter" parameter points to an export button function, eg "spenceExportButton()"
-function exportIterator(obj=sheetCols.spenceObj, exporter) {
+// the "exporter" parameter points to an export button function, eg "spectacularExportButton()"
+function exportIterator(obj=sheetCols.spectacularObj, exporter) {
   let last = 300;
+  let venueCheck = settings.getRange('H23').getValue();
   let rowCell = obj.invSheet.getRange(ROW_CELL_ADDRESS);
   let holdOldRow = rowCell.getValue();
   for (let j=0; j<2; j++){
     if (obj[thisYear+j].dueStatus){
       recStats = obj.thisSheet.getRange(1,obj[thisYear+j].dueStatus,last,1).getValues();
+      venues = obj.thisSheet.getRange(1,obj[thisYear+j].venue,last,1).getValues();
       for (let i=0; i<last; i++) {
-        if (recStats[i][0]=="DUE: Invoice"){    
+        if (recStats[i][0]=="DUE: Invoice" && venues[i][0].includes(venueCheck)){    
           rowCell.setValue(i+1);
-          console.log("Exporting row " + rowCell.getValue());
-          spreadsheet.toast("Exporting row " + rowCell.getValue());
+          console.log("Exporting " + obj.thisSheetName + " row " + rowCell.getValue());
+          spreadsheet.toast("Exporting "+ obj.sheetArtist + " row " + rowCell.getValue());
           pdfFile = exporter();
         }
       }
@@ -293,17 +285,23 @@ function exportIterator(obj=sheetCols.spenceObj, exporter) {
 
 // gets the Invoice: DUE row that is furthest down for a given sheet, across multiple years
 function getFullRange(obj, ...years) {
-  let bigLast = 0; // this will hold the furthest down row
+  let dueArray = [[],[]];
+  let bigLastDue = 0; // this will hold the furthest down row
   for (let year of years){
-    inputCell.setValue(`=left(address(1,`+obj[year].dueStatus+`,2),2)`);
-    tertiaryCell.setValue(`=substitute(`+inputCell.getA1Notation()+`,"$",)`);
-    outputCell.setValue(`=let(letter,`+tertiaryCell.getA1Notation()+`,max(arrayformula(filter(row(indirect("'`+obj.thisSheetName+`'!"&letter&":"&letter)),indirect("'`+obj.thisSheetName+`'!"&letter&":"&letter)="DUE: Invoice"))))`);
-    let last = outputCell.getValue(); // this is the furthest down row of the year currently being checked
-    //cleaning
-    inputCell.clear(); outputCell.clear(); tertiaryCell.clear();
-    if (last > bigLast) { bigLast = last; }
+    dueArray[year]=[];
+    const dueColNum = obj[year].dueStatus;
+    const dueColLtr = obj.thisSheet.getRange(1,dueColNum).getA1Notation().charAt(0);
+    const dueColVals = obj.thisSheet.getRange(dueColLtr+":"+dueColLtr).getValues();
+    let lastDue = 0;
+    for (let i = 0; i<dueColVals.length; i++){
+        lastDue = dueColVals[i][0] == "DUE: Invoice" ? i + 1 : lastDue;
+        if (dueColVals[i][0] == "DUE: Invoice"){
+          dueArray[year].push(i+1);
+        }
+    }
+    bigLastDue = lastDue > bigLastDue ? lastDue : bigLastDue;
   }
-  return bigLast;
+  return dueArray;
 }
 
 // exports PDFs as selected by the user in Settings tab and attaches them to draft emails
@@ -319,7 +317,7 @@ function emailFactory (ranges, ...years) {
     if (ranges[i]!=undefined){ // looking for due bookings in each tab (sheet)...
       for (let year of years){ // ... in each year within that tab (sheet)...
         for (let j=0; j<ranges[i].length; j++) { // ... and now going through each row within that year
-          var ven = ranges[i][j][sheetCols[i][year].venue-1]; // fetching the venue for the current row and storing it in my "ven" variable
+          let ven = ranges[i][j][sheetCols[i][year].venue-1]; // fetching the venue for the current row and storing it in my "ven" variable
           if (ranges[i][j][sheetCols[i][year].dueStatus-1]=="DUE: Invoice"&&ven.includes(venueCheck)){ // checking if the booking is marked as due, and that the venue is the one specified by the user in the Settings sheet (if any)
             console.log(Object.keys(sheetCols)[i]+" "+[j+1]+" is due");
             infoArray = []; // this will collect info about each booking to export
@@ -377,23 +375,22 @@ function emailFactory (ranges, ...years) {
 
 // this runs when you press "RUN" in the Settings tab:
 function factory() {
+  spreadsheet.toast("Collecting settings");
   ranges = [];
   for (let i=0; i<Object.keys(sheetCols).length; i++) { 
     lastCol = sheetCols[i][thisYear+1].invGenCol-1;
-    lastRow = getFullRange(sheetCols[i],thisYear,thisYear+1);
+    lastRow = getFullRange(sheetCols[i],thisYear,thisYear+1).at(-2);
     console.log(sheetCols[i].sheetArtist + " invGenColumn: "+sheetCols[i][thisYear+1].invGenCol+" cols: "+lastCol+" rows: "+lastRow);
     if (lastRow>0){ ranges[i] = sheetCols[i].thisSheet.getRange(1,1,lastRow,lastCol).getValues(); }
   }
-
-  console.log(ranges[3][67]);
 
   // generating invoice refs
   // if user selected "all" in Settings tab:
   if (settings.getRange('E6').getValue()) {
     for (i=thisYear; i<thisYear+2; i++){
       getInvoiceRefs(sheetCols.extObj, i);
-      getInvoiceRefs(sheetCols.spenceObj, i);
-      getInvoiceRefs(sheetCols.georgeObj, i);
+      getInvoiceRefs(sheetCols.spectacularObj, i);
+      getInvoiceRefs(sheetCols.greatObj, i);
       getInvoiceRefs(sheetCols.otherObj, i);
     }
   }
@@ -404,10 +401,10 @@ function factory() {
     for (i=thisYear; i<thisYear+2; i++){
       //generate for externals
       if (settings.getRange('E7').getValue()) { getInvoiceRefs(sheetCols.extObj, i); }
-      // generate for Spence
-      if (settings.getRange('E8').getValue()) { getInvoiceRefs(sheetCols.spenceObj, i); }
-      // generate for George
-      if (settings.getRange('E9').getValue()) { getInvoiceRefs(sheetCols.georgeObj, i); }
+      // generate for Spectacular
+      if (settings.getRange('E8').getValue()) { getInvoiceRefs(sheetCols.spectacularObj, i); }
+      // generate for Great
+      if (settings.getRange('E9').getValue()) { getInvoiceRefs(sheetCols.greatObj, i); }
       // generate for Other
       if (settings.getRange('E10').getValue()) { getInvoiceRefs(sheetCols.otherObj, i); }
     }
@@ -421,18 +418,18 @@ function factory() {
     // PDF exports
     // getting selected artists from settings tab
     extExpFlag = settings.getRange('E14').getValue() || settings.getRange('E15').getValue();
-    spenceExpFlag = settings.getRange('E14').getValue() || settings.getRange('E16').getValue();
-    georgeExpFlag = settings.getRange('E14').getValue() || settings.getRange('E17').getValue();
+    spectacularExpFlag = settings.getRange('E14').getValue() || settings.getRange('E16').getValue();
+    greatExpFlag = settings.getRange('E14').getValue() || settings.getRange('E17').getValue();
     otherExpFlag = settings.getRange('E14').getValue() || settings.getRange('E18').getValue();
 
       // exporting from Externals tab
       if (extExpFlag){ exportIterator(sheetCols.extObj, externalsExportButton); }
 
-      // exporting from Spencer Flay tab
-      if (spenceExpFlag){ exportIterator(sheetCols.spenceObj, spenceExportButton); }
+      // exporting from Spectacular Artist tab
+      if (spectacularExpFlag){ exportIterator(sheetCols.spectacularObj, spectacularExportButton); }
 
-      // exporting from George Croucher tab
-      if (georgeExpFlag){ exportIterator(sheetCols.georgeObj, georgeExportButton) };
+      // exporting from Great Musician tab
+      if (greatExpFlag){ exportIterator(sheetCols.greatObj, greatExportButton) };
 
       // exporting from Other tab
       if (otherExpFlag){ exportIterator(sheetCols.otherObj, otherExportButton) };
@@ -443,12 +440,12 @@ function factory() {
 function onEdit(e) {
   sheet = spreadsheet.getActiveSheet();
   shName = sheet.getSheetName();
-  if (sheet.getActiveCell().getA1Notation()==ROW_CELL_ADDRESS && (shName==EXTERNALS_INVOICE_SHEET || shName==SPENCE_INVOICE_SHEET || shName==GEORGE_INVOICE_SHEET || shName==OTHER_INVOICE_SHEET)) {
+  if (sheet.getActiveCell().getA1Notation()==ROW_CELL_ADDRESS && (shName==EXTERNALS_INVOICE_SHEET || shName==SPECTACULAR_INVOICE_SHEET || shName==GREAT_INVOICE_SHEET || shName==OTHER_INVOICE_SHEET)) {
     sheet.getRange('N2').clear();
   }
 }
 
 // for ad hoc testing
 function sillyDebug() {
-  console.log(otherInvoice.getRange('I11').getFormula());
+  //
 }
